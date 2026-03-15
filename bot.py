@@ -67,10 +67,8 @@ def safe_stem(filename: str | None, fallback: str) -> str:
 
 
 def convert_video_to_mp3(input_path: Path, output_path: Path) -> None:
-    ffmpeg_cmd = shutil.which("ffmpeg") or "ffmpeg"
-
     command = [
-        ffmpeg_cmd,
+        "/usr/bin/env", "ffmpeg",
         "-y",
         "-i",
         str(input_path),
