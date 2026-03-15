@@ -67,8 +67,10 @@ def safe_stem(filename: str | None, fallback: str) -> str:
 
 
 def convert_video_to_mp3(input_path: Path, output_path: Path) -> None:
+    ffmpeg_cmd = shutil.which("ffmpeg") or "ffmpeg"
+
     command = [
-        "/usr/bin/ffmpeg",
+        ffmpeg_cmd,
         "-y",
         "-i",
         str(input_path),
@@ -90,7 +92,6 @@ def convert_video_to_mp3(input_path: Path, output_path: Path) -> None:
 
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "FFmpeg conversion failed.")
-
 
 async def cleanup_files(*paths: Path) -> None:
     for path in paths:
@@ -133,8 +134,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
-
-    FFMPEG_PATH = "/usr/bin/ffmpeg"
 
     telegram_file = None
     original_name = None
