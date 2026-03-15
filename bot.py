@@ -68,7 +68,7 @@ def safe_stem(filename: str | None, fallback: str) -> str:
 
 def convert_video_to_mp3(input_path: Path, output_path: Path) -> None:
     command = [
-        "ffmpeg",
+        "/usr/bin/ffmpeg",
         "-y",
         "-i",
         str(input_path),
@@ -134,11 +134,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not update.message:
         return
 
-    if not check_ffmpeg_installed():
-        await update.message.reply_text(
-            "FFmpeg is not installed or not available in PATH. Install FFmpeg first, then try again."
-        )
-        return
+    FFMPEG_PATH = "/usr/bin/ffmpeg"
 
     telegram_file = None
     original_name = None
