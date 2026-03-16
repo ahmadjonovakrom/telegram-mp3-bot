@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from telegram import Update
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -31,7 +31,6 @@ AUDIO_BITRATE = "192k"
 
 FFMPEG_PATH = os.getenv("FFMPEG_PATH", "ffmpeg")
 
-
 # =========================
 # Logging
 # =========================
@@ -41,6 +40,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# =========================
+# UI
+# =========================
+MAIN_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        ["Help", "Users"],
+        ["Cancel"],
+    ],
+    resize_keyboard=True,
+)
+
+CANCEL_KEYBOARD = ReplyKeyboardMarkup(
+    [["Cancel"]],
+    resize_keyboard=True,
+    one_time_keyboard=False,
+)
 
 # =========================
 # Helpers
@@ -81,14 +96,12 @@ def sanitize_filename(name: str, fallback: str = "audio") -> str:
     if not name:
         return fallback
 
-    # Remove extension if user typed it
     name = Path(name).stem.strip()
 
     cleaned = "".join(
         ch for ch in name if ch.isalnum() or ch in (" ", "_", "-")
     ).strip()
 
-    # Avoid extremely long filenames
     cleaned = cleaned[:80].strip()
 
     return cleaned or fallback
@@ -214,18 +227,27 @@ def extract_media_info(update: Update) -> dict | None:
     return None
 
 
+def is_button_text(text: str | None) -> bool:
+    if not text:
+        return False
+    return text.strip().lower() in {"help", "users", "cancel", "/help", "/users", "/cancel", "/start"}
+
+
 # =========================
-# Commands
+# Commands / Button actions
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user:
         register_user(update.effective_user.id)
 
+    context.user_data.pop("pending_media", None)
+
     await update.message.reply_text(
-        "Hi! Send me a video or audio file.\n\n"
-        "Then I will ask:\n"
-        '"Send a name for the audio."\n\n'
-        "After that, I will convert it to MP3."
+        "Welcome to VideoToMP3Bot.\n\n"
+        "Send me a video or audio file.\n"
+        "Then I’ll ask you to name the MP3.\n"
+        "After that, I’ll convert it for you.",
+        reply_markup=MAIN_KEYBOARD,
     )
 
 
@@ -235,14 +257,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "How to use:\n\n"
-        "1. Send a video or audio\n"
+        "1. Send a video or audio file\n"
         "2. Send a name for the audio\n"
-        "3. Receive your MP3\n\n"
-        "Commands:\n"
-        "/start - Start the bot\n"
-        "/help - Show help\n"
-        "/users - Show total users\n"
-        "/cancel - Cancel current action"
+        "3. Get your MP3 file\n\n"
+        "Buttons:\n"
+        "• Help — show instructions\n"
+        "• Users — show total users\n"
+        "• Cancel — stop current action",
+        reply_markup=MAIN_KEYBOARD,
     )
 
 
@@ -251,12 +273,18 @@ async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         register_user(update.effective_user.id)
 
     count = get_users_count()
-    await update.message.reply_text(f"Total users: {count}")
+    await update.message.reply_text(
+        f"Total users: {count}",
+        reply_markup=MAIN_KEYBOARD,
+    )
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("pending_media", None)
-    await update.message.reply_text("Cancelled.")
+    await update.message.reply_text(
+        "Cancelled.\n\nSend a new video or audio whenever you’re ready.",
+        reply_markup=MAIN_KEYBOARD,
+    )
 
 
 # =========================
@@ -268,17 +296,26 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     ffmpeg_bin = resolve_ffmpeg()
     if not ffmpeg_bin:
-        await update.message.reply_text("FFmpeg not installed.")
+        await update.message.reply_text(
+            "FFmpeg is not installed on the server.",
+            reply_markup=MAIN_KEYBOARD,
+        )
         return
 
     media_info = extract_media_info(update)
     if not media_info:
-        await update.message.reply_text("Send a video or audio file.")
+        await update.message.reply_text(
+            "Please send a supported video or audio file.",
+            reply_markup=MAIN_KEYBOARD,
+        )
         return
 
     context.user_data["pending_media"] = media_info
 
-    await update.message.reply_text("Send a name for the audio.")
+    await update.message.reply_text(
+        "Send a name for the audio.",
+        reply_markup=CANCEL_KEYBOARD,
+    )
 
 
 # =========================
@@ -288,18 +325,38 @@ async def handle_audio_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user:
         register_user(update.effective_user.id)
 
+    text = (update.message.text or "").strip()
+
+    if text.lower() == "cancel":
+        await cancel_command(update, context)
+        return
+
+    if text.lower() == "help":
+        await help_command(update, context)
+        return
+
+    if text.lower() == "users":
+        await users_command(update, context)
+        return
+
     pending_media = context.user_data.get("pending_media")
     if not pending_media:
-        await update.message.reply_text("Send a video or audio file first.")
+        await update.message.reply_text(
+            "Please send a video or audio file first.",
+            reply_markup=MAIN_KEYBOARD,
+        )
         return
 
     ffmpeg_bin = resolve_ffmpeg()
     if not ffmpeg_bin:
-        await update.message.reply_text("FFmpeg not installed.")
+        await update.message.reply_text(
+            "FFmpeg is not installed on the server.",
+            reply_markup=MAIN_KEYBOARD,
+        )
         return
 
     requested_name = sanitize_filename(
-        update.message.text,
+        text,
         fallback=f"audio_{update.message.message_id}",
     )
 
@@ -309,7 +366,10 @@ async def handle_audio_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     input_path = DOWNLOAD_DIR / f"{requested_name}_{update.message.message_id}{input_ext}"
     output_path = OUTPUT_DIR / f"{requested_name}_{update.message.message_id}{AUDIO_EXTENSION}"
 
-    status = await update.message.reply_text("Converting to MP3...")
+    status = await update.message.reply_text(
+        "Converting to MP3...\nPlease wait a moment.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
     try:
         telegram_file = await context.bot.get_file(pending_media["file_id"])
@@ -325,17 +385,25 @@ async def handle_audio_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         with open(output_path, "rb") as audio_file:
-            await update.message.reply_audio(
-                audio=audio_file,
+            await update.message.reply_document(
+                document=audio_file,
                 filename=f"{requested_name}{AUDIO_EXTENSION}",
-                title=requested_name,
+                caption=f"Your file is ready: {requested_name}{AUDIO_EXTENSION}",
             )
 
-        await status.edit_text("Done!")
+        await status.edit_text("Done.")
+        await update.message.reply_text(
+            "Send another video or audio file whenever you want.",
+            reply_markup=MAIN_KEYBOARD,
+        )
 
     except Exception as exc:
         logger.exception("Conversion failed: %s", exc)
-        await status.edit_text(f"Error: {exc}")
+        await status.edit_text("Something went wrong during conversion.")
+        await update.message.reply_text(
+            "Please try again with another file.",
+            reply_markup=MAIN_KEYBOARD,
+        )
 
     finally:
         context.user_data.pop("pending_media", None)
@@ -343,16 +411,46 @@ async def handle_audio_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# Fallback handler
+# Text router
+# =========================
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user:
+        register_user(update.effective_user.id)
+
+    text = (update.message.text or "").strip()
+
+    if text.lower() == "help":
+        await help_command(update, context)
+        return
+
+    if text.lower() == "users":
+        await users_command(update, context)
+        return
+
+    if text.lower() == "cancel":
+        await cancel_command(update, context)
+        return
+
+    await handle_audio_name(update, context)
+
+
+# =========================
+# Fallback
 # =========================
 async def unsupported_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user:
         register_user(update.effective_user.id)
 
     if context.user_data.get("pending_media"):
-        await update.message.reply_text("Send a text name for the audio.")
+        await update.message.reply_text(
+            "Please send the audio name as text.\n\nExample: lesson 5",
+            reply_markup=CANCEL_KEYBOARD,
+        )
     else:
-        await update.message.reply_text("Send a video or audio file.")
+        await update.message.reply_text(
+            "Please send a video or audio file to begin.",
+            reply_markup=MAIN_KEYBOARD,
+        )
 
 
 # =========================
@@ -371,7 +469,6 @@ def main():
     application.add_handler(CommandHandler("users", users_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
 
-    # First: media
     application.add_handler(
         MessageHandler(
             filters.VIDEO | filters.AUDIO | filters.VOICE | filters.Document.ALL,
@@ -379,13 +476,13 @@ def main():
         )
     )
 
-    # Then: filename text
     application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_audio_name)
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)
     )
 
-    # Fallback
-    application.add_handler(MessageHandler(~filters.COMMAND, unsupported_message))
+    application.add_handler(
+        MessageHandler(~(filters.TEXT | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.Document.ALL), unsupported_message)
+    )
 
     logger.info("Bot running...")
     application.run_polling()
