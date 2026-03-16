@@ -88,6 +88,10 @@ TEXTS = {
         "choose_language": "Choose a language.",
         "language_saved": "Language updated.",
         "stats": "Users: {users}\nTotal conversions: {total}\nConversions today: {today}\nMost active user conversions: {top}",
+        "btn_help": "Help",
+        "btn_language": "Language",
+        "btn_stats": "Stats",
+        "btn_cancel": "Cancel",
     },
     "uz": {
         "choose_bot_language": "Bot tilini tanlang",
@@ -105,16 +109,16 @@ TEXTS = {
         ),
         "help_buttons_user": (
             "\n\nTugmalar:\n"
-            "• Help — yo‘riqnoma\n"
-            "• Language — tilni o‘zgartirish\n"
-            "• Cancel — joriy amalni bekor qilish"
+            "• Yordam — yo‘riqnoma\n"
+            "• Til — tilni o‘zgartirish\n"
+            "• Bekor qilish — joriy amalni bekor qilish"
         ),
         "help_buttons_admin": (
             "\n\nTugmalar:\n"
-            "• Help — yo‘riqnoma\n"
-            "• Language — tilni o‘zgartirish\n"
-            "• Stats — bot statistikasi\n"
-            "• Cancel — joriy amalni bekor qilish"
+            "• Yordam — yo‘riqnoma\n"
+            "• Til — tilni o‘zgartirish\n"
+            "• Statistika — bot statistikasi\n"
+            "• Bekor qilish — joriy amalni bekor qilish"
         ),
         "cancelled": "Bekor qilindi.\n\nTayyor bo‘lsangiz, yangi video yoki audio yuboring.",
         "send_supported": "Iltimos, mos video yoki audio fayl yuboring.",
@@ -132,6 +136,10 @@ TEXTS = {
         "choose_language": "Tilni tanlang.",
         "language_saved": "Til yangilandi.",
         "stats": "Foydalanuvchilar: {users}\nJami konvertatsiyalar: {total}\nBugungi konvertatsiyalar: {today}\nEng faol foydalanuvchi konvertatsiyasi: {top}",
+        "btn_help": "Yordam",
+        "btn_language": "Til",
+        "btn_stats": "Statistika",
+        "btn_cancel": "Bekor qilish",
     },
     "ru": {
         "choose_bot_language": "Выберите язык бота",
@@ -149,16 +157,16 @@ TEXTS = {
         ),
         "help_buttons_user": (
             "\n\nКнопки:\n"
-            "• Help — инструкция\n"
-            "• Language — сменить язык\n"
-            "• Cancel — отменить текущее действие"
+            "• Помощь — инструкция\n"
+            "• Язык — сменить язык\n"
+            "• Отмена — отменить текущее действие"
         ),
         "help_buttons_admin": (
             "\n\nКнопки:\n"
-            "• Help — инструкция\n"
-            "• Language — сменить язык\n"
-            "• Stats — статистика бота\n"
-            "• Cancel — отменить текущее действие"
+            "• Помощь — инструкция\n"
+            "• Язык — сменить язык\n"
+            "• Статистика — статистика бота\n"
+            "• Отмена — отменить текущее действие"
         ),
         "cancelled": "Отменено.\n\nКогда будете готовы, отправьте новое видео или аудио.",
         "send_supported": "Пожалуйста, отправьте поддерживаемый видео- или аудиофайл.",
@@ -176,40 +184,63 @@ TEXTS = {
         "choose_language": "Выберите язык.",
         "language_saved": "Язык обновлён.",
         "stats": "Пользователи: {users}\nВсего конвертаций: {total}\nКонвертаций сегодня: {today}\nМаксимум у одного пользователя: {top}",
+        "btn_help": "Помощь",
+        "btn_language": "Язык",
+        "btn_stats": "Статистика",
+        "btn_cancel": "Отмена",
     },
 }
 
 # =========================
 # UI
 # =========================
+def get_user_language(user_id: int) -> str:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            row = conn.execute(
+                "SELECT language FROM users WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            if row and row[0] in TEXTS:
+                return row[0]
+    except Exception as exc:
+        logger.warning("Could not get user language for %s: %s", user_id, exc)
+    return "en"
+
+
+def t(user_id: int, key: str) -> str:
+    lang = get_user_language(user_id)
+    return TEXTS.get(lang, TEXTS["en"])[key]
+
+
 def get_main_keyboard(user_id: int):
     if user_id == ADMIN_ID:
         buttons = [
-            ["Help"],
-            ["Language"],
-            ["Stats"],
-            ["Cancel"],
+            [t(user_id, "btn_help")],
+            [t(user_id, "btn_language")],
+            [t(user_id, "btn_stats")],
+            [t(user_id, "btn_cancel")],
         ]
     else:
         buttons = [
-            ["Help"],
-            ["Language"],
-            ["Cancel"],
+            [t(user_id, "btn_help")],
+            [t(user_id, "btn_language")],
+            [t(user_id, "btn_cancel")],
         ]
 
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 
-CANCEL_KEYBOARD = ReplyKeyboardMarkup(
-    [["Cancel"]],
-    resize_keyboard=True,
-    one_time_keyboard=False,
-)
+def get_cancel_keyboard(user_id: int):
+    return ReplyKeyboardMarkup(
+        [[t(user_id, "btn_cancel")]],
+        resize_keyboard=True,
+        one_time_keyboard=False,
+    )
+
 
 LANGUAGE_KEYBOARD = ReplyKeyboardMarkup(
-    [
-        ["English", "Uzbek", "Russian"],
-    ],
+    [["English", "Uzbek", "Russian"]],
     resize_keyboard=True,
 )
 
@@ -266,20 +297,6 @@ def has_language(user_id: int) -> bool:
         return False
 
 
-def get_user_language(user_id: int) -> str:
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            row = conn.execute(
-                "SELECT language FROM users WHERE user_id = ?",
-                (user_id,),
-            ).fetchone()
-            if row and row[0] in TEXTS:
-                return row[0]
-    except Exception as exc:
-        logger.warning("Could not get user language for %s: %s", user_id, exc)
-    return "en"
-
-
 def set_user_language(user_id: int, language_code: str):
     with sqlite3.connect(DB_FILE) as conn:
         conn.execute(
@@ -291,11 +308,6 @@ def set_user_language(user_id: int, language_code: str):
             (language_code, user_id),
         )
         conn.commit()
-
-
-def t(user_id: int, key: str) -> str:
-    lang = get_user_language(user_id)
-    return TEXTS.get(lang, TEXTS["en"])[key]
 
 
 def log_conversion(user_id: int):
@@ -582,7 +594,7 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         t(user_id, "send_name"),
-        reply_markup=CANCEL_KEYBOARD,
+        reply_markup=get_cancel_keyboard(user_id),
     )
 
 # =========================
@@ -595,19 +607,24 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
     lower_text = text.lower()
 
-    if lower_text == "cancel":
+    help_words = {"help", "yordam", "помощь"}
+    language_words = {"language", "til", "язык"}
+    stats_words = {"stats", "statistika", "статистика"}
+    cancel_words = {"cancel", "bekor qilish", "отмена"}
+
+    if lower_text in cancel_words:
         await cancel_command(update, context)
         return
 
-    if lower_text == "help":
+    if lower_text in help_words:
         await help_command(update, context)
         return
 
-    if lower_text == "language":
+    if lower_text in language_words:
         await language_command(update, context)
         return
 
-    if lower_text == "stats":
+    if lower_text in stats_words:
         await stats_command(update, context)
         return
 
@@ -720,7 +737,7 @@ async def unsupported_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     if context.user_data.get("pending_media"):
         await update.message.reply_text(
             t(user_id, "send_name_as_text"),
-            reply_markup=CANCEL_KEYBOARD,
+            reply_markup=get_cancel_keyboard(user_id),
         )
     else:
         await update.message.reply_text(
