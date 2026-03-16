@@ -1,8 +1,8 @@
 import asyncio
-import json
 import logging
 import os
 import shutil
+import sqlite3
 import subprocess
 from pathlib import Path
 
@@ -20,14 +20,13 @@ from telegram.ext import (
 # =========================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Put your Telegram numeric ID here
 ADMIN_ID = 8368997991
 
 BASE_DIR = Path(__file__).resolve().parent
 DOWNLOAD_DIR = BASE_DIR / "downloads"
 OUTPUT_DIR = BASE_DIR / "outputs"
 DATA_DIR = BASE_DIR / "data"
-USERS_FILE = DATA_DIR / "users.json"
+DB_FILE = DATA_DIR / "bot.db"
 
 AUDIO_EXTENSION = ".mp3"
 AUDIO_BITRATE = "192k"
@@ -79,8 +78,40 @@ def ensure_directories():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    if not USERS_FILE.exists():
-        USERS_FILE.write_text("[]", encoding="utf-8")
+
+def init_db():
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY
+            )
+            """
+        )
+        conn.commit()
+
+
+def register_user(user_id: int):
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
+                (user_id,),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("Could not register user %s: %s", user_id, exc)
+
+
+def get_users_count() -> int:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.execute("SELECT COUNT(*) FROM users")
+            row = cursor.fetchone()
+            return row[0] if row else 0
+    except Exception as exc:
+        logger.warning("Could not read users count: %s", exc)
+        return 0
 
 
 def resolve_ffmpeg():
@@ -157,35 +188,6 @@ async def cleanup_files(*paths: Path):
             logger.warning("Failed deleting %s: %s", path, exc)
 
 
-def load_users() -> set:
-    try:
-        data = json.loads(USERS_FILE.read_text(encoding="utf-8"))
-        return set(data if isinstance(data, list) else [])
-    except Exception as exc:
-        logger.warning("Could not load users.json: %s", exc)
-        return set()
-
-
-def save_users(users: set):
-    try:
-        USERS_FILE.write_text(
-            json.dumps(sorted(list(users)), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-    except Exception as exc:
-        logger.warning("Could not save users.json: %s", exc)
-
-
-def register_user(user_id: int):
-    users = load_users()
-    users.add(user_id)
-    save_users(users)
-
-
-def get_users_count() -> int:
-    return len(load_users())
-
-
 def is_admin(user_id: int) -> bool:
     return user_id == ADMIN_ID
 
@@ -256,7 +258,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "Welcome to VideoToMP3Bot.\n\n"
-        "Send a video or audio file.\n"
+        "Send me a video or audio file.\n"
         "Then I’ll ask you to name the MP3.\n"
         "After that, I’ll convert it for you.",
         reply_markup=get_main_keyboard(update.effective_user.id),
@@ -485,6 +487,7 @@ def main():
         raise ValueError("BOT_TOKEN missing.")
 
     ensure_directories()
+    init_db()
 
     application = Application.builder().token(BOT_TOKEN).build()
 
