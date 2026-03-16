@@ -706,12 +706,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         log_conversion(user_id)
 
-        await status.edit_text(t(user_id, "done"))
+        # Remove the "Converting..." message
+        await status.delete()
         await update.message.reply_text(
             t(user_id, "send_another"),
-            reply_markup=get_main_keyboard(user_id),
-        )
-
+        reply_markup=get_main_keyboard(user_id),
+       )
     except Exception as exc:
         logger.exception("Conversion failed: %s", exc)
         await status.edit_text(t(user_id, "generic_error"))
