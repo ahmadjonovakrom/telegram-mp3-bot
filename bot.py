@@ -56,8 +56,8 @@ TEXTS = {
         "help": (
             "How to use:\n\n"
             "1. Send a video or audio file\n"
-            "2. Send a name for the audio\n"
-            "3. Get your MP3 file"
+            "2. Enter a name for the MP3\n"
+            "3. Receive your converted file"
         ),
         "help_buttons_user": (
             "\n\nButtons:\n"
@@ -104,8 +104,8 @@ TEXTS = {
         "help": (
             "Foydalanish yo‘li:\n\n"
             "1. Video yoki audio fayl yuboring\n"
-            "2. Audio uchun nom yuboring\n"
-            "3. MP3 faylingizni oling"
+            "2. MP3 uchun nom kiriting\n"
+            "3. Tayyor faylni qabul qiling"
         ),
         "help_buttons_user": (
             "\n\nTugmalar:\n"
@@ -152,8 +152,8 @@ TEXTS = {
         "help": (
             "Как пользоваться:\n\n"
             "1. Отправьте видео или аудиофайл\n"
-            "2. Отправьте название для аудио\n"
-            "3. Получите свой MP3 файл"
+            "2. Введите название для MP3\n"
+            "3. Получите готовый файл"
         ),
         "help_buttons_user": (
             "\n\nКнопки:\n"
@@ -216,15 +216,12 @@ def t(user_id: int, key: str) -> str:
 def get_main_keyboard(user_id: int):
     if user_id == ADMIN_ID:
         buttons = [
-            [t(user_id, "btn_help")],
-            [t(user_id, "btn_language")],
-            [t(user_id, "btn_stats")],
-            [t(user_id, "btn_cancel")],
+            [t(user_id, "btn_help"), t(user_id, "btn_language")],
+            [t(user_id, "btn_stats"), t(user_id, "btn_cancel")],
         ]
     else:
         buttons = [
-            [t(user_id, "btn_help")],
-            [t(user_id, "btn_language")],
+            [t(user_id, "btn_help"), t(user_id, "btn_language")],
             [t(user_id, "btn_cancel")],
         ]
 
