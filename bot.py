@@ -4,6 +4,7 @@ import os
 import shutil
 import sqlite3
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
@@ -19,7 +20,6 @@ from telegram.ext import (
 # Configuration
 # =========================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 ADMIN_ID = 8368997991
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -30,8 +30,13 @@ DB_FILE = DATA_DIR / "bot.db"
 
 AUDIO_EXTENSION = ".mp3"
 AUDIO_BITRATE = "192k"
-
 FFMPEG_PATH = os.getenv("FFMPEG_PATH", "ffmpeg")
+
+LANGUAGES = {
+    "en": "English",
+    "uz": "Uzbek",
+    "ru": "Russian",
+}
 
 # =========================
 # Logging
@@ -43,25 +48,159 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # =========================
+# Texts
+# =========================
+TEXTS = {
+    "en": {
+        "welcome": (
+            "Welcome to VideoToMP3Bot.\n\n"
+            "Send me a video or audio file.\n"
+            "Then I’ll ask you to name the MP3.\n"
+            "After that, I’ll convert it for you."
+        ),
+        "help": (
+            "How to use:\n\n"
+            "1. Send a video or audio file\n"
+            "2. Send a name for the audio\n"
+            "3. Get your MP3 file"
+        ),
+        "help_buttons_user": (
+            "\n\nButtons:\n"
+            "• Help — show instructions\n"
+            "• Language — change language\n"
+            "• Cancel — stop current action"
+        ),
+        "help_buttons_admin": (
+            "\n\nButtons:\n"
+            "• Help — show instructions\n"
+            "• Language — change language\n"
+            "• Stats — show bot statistics\n"
+            "• Cancel — stop current action"
+        ),
+        "cancelled": "Cancelled.\n\nSend a new video or audio whenever you’re ready.",
+        "send_supported": "Please send a supported video or audio file.",
+        "send_name": "Send a name for the audio.",
+        "send_name_as_text": "Please send the audio name as text.\n\nExample: lesson 5",
+        "send_first": "Please send a video or audio file first.",
+        "ffmpeg_missing": "FFmpeg is not installed on the server.",
+        "converting": "Converting to MP3...\nPlease wait a moment.",
+        "done": "Done.",
+        "send_another": "Send another video or audio file whenever you want.",
+        "try_again": "Please try again with another file.",
+        "generic_error": "Something went wrong during conversion.",
+        "begin_with_file": "Please send a video or audio file to begin.",
+        "stats_unavailable": "This button is not available.",
+        "choose_language": "Choose a language.",
+        "language_saved": "Language updated.",
+        "stats": "Users: {users}\nTotal conversions: {total}\nConversions today: {today}\nMost active user conversions: {top}",
+    },
+    "uz": {
+        "welcome": (
+            "VideoToMP3Bot ga xush kelibsiz.\n\n"
+            "Menga video yoki audio fayl yuboring.\n"
+            "Keyin men MP3 nomini so‘rayman.\n"
+            "Shundan so‘ng uni siz uchun MP3 ga aylantiraman."
+        ),
+        "help": (
+            "Foydalanish yo‘li:\n\n"
+            "1. Video yoki audio fayl yuboring\n"
+            "2. Audio uchun nom yuboring\n"
+            "3. MP3 faylingizni oling"
+        ),
+        "help_buttons_user": (
+            "\n\nTugmalar:\n"
+            "• Help — yo‘riqnoma\n"
+            "• Language — tilni o‘zgartirish\n"
+            "• Cancel — joriy amalni bekor qilish"
+        ),
+        "help_buttons_admin": (
+            "\n\nTugmalar:\n"
+            "• Help — yo‘riqnoma\n"
+            "• Language — tilni o‘zgartirish\n"
+            "• Stats — bot statistikasi\n"
+            "• Cancel — joriy amalni bekor qilish"
+        ),
+        "cancelled": "Bekor qilindi.\n\nTayyor bo‘lsangiz, yangi video yoki audio yuboring.",
+        "send_supported": "Iltimos, mos video yoki audio fayl yuboring.",
+        "send_name": "Audio uchun nom yuboring.",
+        "send_name_as_text": "Iltimos, audio nomini matn ko‘rinishida yuboring.\n\nMasalan: lesson 5",
+        "send_first": "Avval video yoki audio fayl yuboring.",
+        "ffmpeg_missing": "Serverda FFmpeg o‘rnatilmagan.",
+        "converting": "MP3 ga aylantirilmoqda...\nIltimos, biroz kuting.",
+        "done": "Tayyor.",
+        "send_another": "Xohlasangiz, yana video yoki audio yuborishingiz mumkin.",
+        "try_again": "Iltimos, boshqa fayl bilan yana urinib ko‘ring.",
+        "generic_error": "Aylantirish jarayonida xatolik yuz berdi.",
+        "begin_with_file": "Boshlash uchun video yoki audio fayl yuboring.",
+        "stats_unavailable": "Bu tugma siz uchun mavjud emas.",
+        "choose_language": "Tilni tanlang.",
+        "language_saved": "Til yangilandi.",
+        "stats": "Foydalanuvchilar: {users}\nJami konvertatsiyalar: {total}\nBugungi konvertatsiyalar: {today}\nEng faol foydalanuvchi konvertatsiyasi: {top}",
+    },
+    "ru": {
+        "welcome": (
+            "Добро пожаловать в VideoToMP3Bot.\n\n"
+            "Отправьте мне видео или аудиофайл.\n"
+            "Потом я попрошу вас указать имя MP3.\n"
+            "После этого я конвертирую файл."
+        ),
+        "help": (
+            "Как пользоваться:\n\n"
+            "1. Отправьте видео или аудиофайл\n"
+            "2. Отправьте название для аудио\n"
+            "3. Получите свой MP3 файл"
+        ),
+        "help_buttons_user": (
+            "\n\nКнопки:\n"
+            "• Help — инструкция\n"
+            "• Language — сменить язык\n"
+            "• Cancel — отменить текущее действие"
+        ),
+        "help_buttons_admin": (
+            "\n\nКнопки:\n"
+            "• Help — инструкция\n"
+            "• Language — сменить язык\n"
+            "• Stats — статистика бота\n"
+            "• Cancel — отменить текущее действие"
+        ),
+        "cancelled": "Отменено.\n\nКогда будете готовы, отправьте новое видео или аудио.",
+        "send_supported": "Пожалуйста, отправьте поддерживаемый видео- или аудиофайл.",
+        "send_name": "Отправьте название для аудио.",
+        "send_name_as_text": "Пожалуйста, отправьте название аудио текстом.\n\nПример: lesson 5",
+        "send_first": "Сначала отправьте видео или аудиофайл.",
+        "ffmpeg_missing": "FFmpeg не установлен на сервере.",
+        "converting": "Конвертация в MP3...\nПожалуйста, подождите.",
+        "done": "Готово.",
+        "send_another": "Можете отправить ещё одно видео или аудио.",
+        "try_again": "Пожалуйста, попробуйте ещё раз с другим файлом.",
+        "generic_error": "Во время конвертации произошла ошибка.",
+        "begin_with_file": "Чтобы начать, отправьте видео или аудиофайл.",
+        "stats_unavailable": "Эта кнопка вам недоступна.",
+        "choose_language": "Выберите язык.",
+        "language_saved": "Язык обновлён.",
+        "stats": "Пользователи: {users}\nВсего конвертаций: {total}\nКонвертаций сегодня: {today}\nМаксимум у одного пользователя: {top}",
+    },
+}
+
+# =========================
 # UI
 # =========================
 def get_main_keyboard(user_id: int):
     if user_id == ADMIN_ID:
         buttons = [
             ["Help"],
-            ["Users"],
+            ["Language"],
+            ["Stats"],
             ["Cancel"],
         ]
     else:
         buttons = [
             ["Help"],
+            ["Language"],
             ["Cancel"],
         ]
 
-    return ReplyKeyboardMarkup(
-        buttons,
-        resize_keyboard=True,
-    )
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 
 CANCEL_KEYBOARD = ReplyKeyboardMarkup(
@@ -70,8 +209,18 @@ CANCEL_KEYBOARD = ReplyKeyboardMarkup(
     one_time_keyboard=False,
 )
 
+LANGUAGE_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        ["English"],
+        ["Uzbek"],
+        ["Russian"],
+        ["Cancel"],
+    ],
+    resize_keyboard=True,
+)
+
 # =========================
-# Helpers
+# Database
 # =========================
 def ensure_directories():
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -84,7 +233,17 @@ def init_db():
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY
+                user_id INTEGER PRIMARY KEY,
+                language TEXT NOT NULL DEFAULT 'en'
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS conversions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL
             )
             """
         )
@@ -92,28 +251,94 @@ def init_db():
 
 
 def register_user(user_id: int):
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO users (user_id, language) VALUES (?, 'en')",
+            (user_id,),
+        )
+        conn.commit()
+
+
+def get_user_language(user_id: int) -> str:
     try:
         with sqlite3.connect(DB_FILE) as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
+            row = conn.execute(
+                "SELECT language FROM users WHERE user_id = ?",
                 (user_id,),
-            )
-            conn.commit()
+            ).fetchone()
+            if row and row[0] in TEXTS:
+                return row[0]
     except Exception as exc:
-        logger.warning("Could not register user %s: %s", user_id, exc)
+        logger.warning("Could not get user language for %s: %s", user_id, exc)
+    return "en"
+
+
+def set_user_language(user_id: int, language_code: str):
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO users (user_id, language) VALUES (?, ?)",
+            (user_id, language_code),
+        )
+        conn.execute(
+            "UPDATE users SET language = ? WHERE user_id = ?",
+            (language_code, user_id),
+        )
+        conn.commit()
+
+
+def t(user_id: int, key: str) -> str:
+    lang = get_user_language(user_id)
+    return TEXTS.get(lang, TEXTS["en"])[key]
+
+
+def log_conversion(user_id: int):
+    now_utc = datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "INSERT INTO conversions (user_id, created_at) VALUES (?, ?)",
+            (user_id, now_utc),
+        )
+        conn.commit()
 
 
 def get_users_count() -> int:
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.execute("SELECT COUNT(*) FROM users")
-            row = cursor.fetchone()
-            return row[0] if row else 0
-    except Exception as exc:
-        logger.warning("Could not read users count: %s", exc)
-        return 0
+    with sqlite3.connect(DB_FILE) as conn:
+        row = conn.execute("SELECT COUNT(*) FROM users").fetchone()
+        return row[0] if row else 0
 
 
+def get_total_conversions() -> int:
+    with sqlite3.connect(DB_FILE) as conn:
+        row = conn.execute("SELECT COUNT(*) FROM conversions").fetchone()
+        return row[0] if row else 0
+
+
+def get_conversions_today() -> int:
+    today = datetime.now(timezone.utc).date().isoformat()
+    with sqlite3.connect(DB_FILE) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM conversions WHERE substr(created_at, 1, 10) = ?",
+            (today,),
+        ).fetchone()
+        return row[0] if row else 0
+
+
+def get_top_user_conversions() -> int:
+    with sqlite3.connect(DB_FILE) as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS conversion_count
+            FROM conversions
+            GROUP BY user_id
+            ORDER BY conversion_count DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        return row[0] if row else 0
+
+# =========================
+# Helpers
+# =========================
 def resolve_ffmpeg():
     candidates = [
         FFMPEG_PATH,
@@ -142,13 +367,10 @@ def sanitize_filename(name: str, fallback: str = "audio") -> str:
         return fallback
 
     name = Path(name).stem.strip()
-
     cleaned = "".join(
         ch for ch in name if ch.isalnum() or ch in (" ", "_", "-")
     ).strip()
-
     cleaned = cleaned[:80].strip()
-
     return cleaned or fallback
 
 
@@ -220,136 +442,139 @@ def extract_media_info(update: Update) -> dict | None:
         return {
             "file_id": message.video.file_id,
             "original_name": message.video.file_name or f"video_{message.message_id}.mp4",
-            "kind": "video",
         }
 
     if message.audio:
         return {
             "file_id": message.audio.file_id,
             "original_name": message.audio.file_name or f"audio_{message.message_id}.mp3",
-            "kind": "audio",
         }
 
     if message.voice:
         return {
             "file_id": message.voice.file_id,
             "original_name": f"voice_{message.message_id}.ogg",
-            "kind": "voice",
         }
 
     if message.document and is_supported_media(message):
         return {
             "file_id": message.document.file_id,
             "original_name": message.document.file_name or f"file_{message.message_id}",
-            "kind": "document",
         }
 
     return None
 
-
 # =========================
-# Commands / Button actions
+# Commands
 # =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user:
-        register_user(update.effective_user.id)
-
+    user_id = update.effective_user.id
+    register_user(user_id)
     context.user_data.pop("pending_media", None)
+    context.user_data.pop("awaiting_language", None)
 
     await update.message.reply_text(
-        "Welcome to VideoToMP3Bot.\n\n"
-        "Send me a video or audio file.\n"
-        "Then I’ll ask you to name the MP3.\n"
-        "After that, I’ll convert it for you.",
-        reply_markup=get_main_keyboard(update.effective_user.id),
+        t(user_id, "welcome"),
+        reply_markup=get_main_keyboard(user_id),
     )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user:
-        register_user(update.effective_user.id)
+    user_id = update.effective_user.id
+    register_user(user_id)
 
-    if is_admin(update.effective_user.id):
-        extra = "\n• Users — show total users"
+    text = t(user_id, "help")
+    if is_admin(user_id):
+        text += t(user_id, "help_buttons_admin")
     else:
-        extra = ""
+        text += t(user_id, "help_buttons_user")
 
     await update.message.reply_text(
-        "How to use:\n\n"
-        "1. Send a video or audio file\n"
-        "2. Send a name for the audio\n"
-        "3. Get your MP3 file\n\n"
-        "Buttons:\n"
-        "• Help — show instructions"
-        f"{extra}\n"
-        "• Cancel — stop current action",
-        reply_markup=get_main_keyboard(update.effective_user.id),
+        text,
+        reply_markup=get_main_keyboard(user_id),
     )
 
 
-async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user:
-        register_user(update.effective_user.id)
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(user_id)
 
-    if not is_admin(update.effective_user.id):
+    if not is_admin(user_id):
         await update.message.reply_text(
-            "This button is not available.",
-            reply_markup=get_main_keyboard(update.effective_user.id),
+            t(user_id, "stats_unavailable"),
+            reply_markup=get_main_keyboard(user_id),
         )
         return
 
-    count = get_users_count()
+    text = t(user_id, "stats").format(
+        users=get_users_count(),
+        total=get_total_conversions(),
+        today=get_conversions_today(),
+        top=get_top_user_conversions(),
+    )
     await update.message.reply_text(
-        f"Total users: {count}",
-        reply_markup=get_main_keyboard(update.effective_user.id),
+        text,
+        reply_markup=get_main_keyboard(user_id),
+    )
+
+
+async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(user_id)
+    context.user_data["awaiting_language"] = True
+
+    await update.message.reply_text(
+        t(user_id, "choose_language"),
+        reply_markup=LANGUAGE_KEYBOARD,
     )
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     context.user_data.pop("pending_media", None)
+    context.user_data.pop("awaiting_language", None)
+
     await update.message.reply_text(
-        "Cancelled.\n\nSend a new video or audio whenever you’re ready.",
-        reply_markup=get_main_keyboard(update.effective_user.id),
+        t(user_id, "cancelled"),
+        reply_markup=get_main_keyboard(user_id),
     )
 
-
 # =========================
-# Media handler
+# Media
 # =========================
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user:
-        register_user(update.effective_user.id)
+    user_id = update.effective_user.id
+    register_user(user_id)
 
     ffmpeg_bin = resolve_ffmpeg()
     if not ffmpeg_bin:
         await update.message.reply_text(
-            "FFmpeg is not installed on the server.",
-            reply_markup=get_main_keyboard(update.effective_user.id),
+            t(user_id, "ffmpeg_missing"),
+            reply_markup=get_main_keyboard(user_id),
         )
         return
 
     media_info = extract_media_info(update)
     if not media_info:
         await update.message.reply_text(
-            "Please send a supported video or audio file.",
-            reply_markup=get_main_keyboard(update.effective_user.id),
+            t(user_id, "send_supported"),
+            reply_markup=get_main_keyboard(user_id),
         )
         return
 
     context.user_data["pending_media"] = media_info
 
     await update.message.reply_text(
-        "Send a name for the audio.",
+        t(user_id, "send_name"),
         reply_markup=CANCEL_KEYBOARD,
     )
 
-
 # =========================
-# Name handler
+# Text
 # =========================
-async def handle_audio_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user:
-        register_user(update.effective_user.id)
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    register_user(user_id)
 
     text = (update.message.text or "").strip()
     lower_text = text.lower()
@@ -362,23 +587,48 @@ async def handle_audio_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await help_command(update, context)
         return
 
-    if lower_text == "users":
-        await users_command(update, context)
+    if lower_text == "language":
+        await language_command(update, context)
+        return
+
+    if lower_text == "stats":
+        await stats_command(update, context)
+        return
+
+    if context.user_data.get("awaiting_language"):
+        mapping = {
+            "english": "en",
+            "uzbek": "uz",
+            "russian": "ru",
+        }
+        language_code = mapping.get(lower_text)
+        if language_code:
+            set_user_language(user_id, language_code)
+            context.user_data.pop("awaiting_language", None)
+            await update.message.reply_text(
+                t(user_id, "language_saved"),
+                reply_markup=get_main_keyboard(user_id),
+            )
+        else:
+            await update.message.reply_text(
+                t(user_id, "choose_language"),
+                reply_markup=LANGUAGE_KEYBOARD,
+            )
         return
 
     pending_media = context.user_data.get("pending_media")
     if not pending_media:
         await update.message.reply_text(
-            "Please send a video or audio file first.",
-            reply_markup=get_main_keyboard(update.effective_user.id),
+            t(user_id, "begin_with_file"),
+            reply_markup=get_main_keyboard(user_id),
         )
         return
 
     ffmpeg_bin = resolve_ffmpeg()
     if not ffmpeg_bin:
         await update.message.reply_text(
-            "FFmpeg is not installed on the server.",
-            reply_markup=get_main_keyboard(update.effective_user.id),
+            t(user_id, "ffmpeg_missing"),
+            reply_markup=get_main_keyboard(user_id),
         )
         return
 
@@ -394,7 +644,7 @@ async def handle_audio_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     output_path = OUTPUT_DIR / f"{requested_name}_{update.message.message_id}{AUDIO_EXTENSION}"
 
     status = await update.message.reply_text(
-        "Converting to MP3...\nPlease wait a moment.",
+        t(user_id, "converting"),
         reply_markup=ReplyKeyboardRemove(),
     )
 
@@ -417,67 +667,43 @@ async def handle_audio_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 filename=f"{requested_name}{AUDIO_EXTENSION}",
             )
 
-        await status.edit_text("Done.")
+        log_conversion(user_id)
+
+        await status.edit_text(t(user_id, "done"))
         await update.message.reply_text(
-            "Send another video or audio file whenever you want.",
-            reply_markup=get_main_keyboard(update.effective_user.id),
+            t(user_id, "send_another"),
+            reply_markup=get_main_keyboard(user_id),
         )
 
     except Exception as exc:
         logger.exception("Conversion failed: %s", exc)
-        await status.edit_text("Something went wrong during conversion.")
+        await status.edit_text(t(user_id, "generic_error"))
         await update.message.reply_text(
-            "Please try again with another file.",
-            reply_markup=get_main_keyboard(update.effective_user.id),
+            t(user_id, "try_again"),
+            reply_markup=get_main_keyboard(user_id),
         )
 
     finally:
         context.user_data.pop("pending_media", None)
         await cleanup_files(input_path, output_path)
 
-
-# =========================
-# Text router
-# =========================
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user:
-        register_user(update.effective_user.id)
-
-    text = (update.message.text or "").strip().lower()
-
-    if text == "help":
-        await help_command(update, context)
-        return
-
-    if text == "users":
-        await users_command(update, context)
-        return
-
-    if text == "cancel":
-        await cancel_command(update, context)
-        return
-
-    await handle_audio_name(update, context)
-
-
 # =========================
 # Fallback
 # =========================
 async def unsupported_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user:
-        register_user(update.effective_user.id)
+    user_id = update.effective_user.id
+    register_user(user_id)
 
     if context.user_data.get("pending_media"):
         await update.message.reply_text(
-            "Please send the audio name as text.\n\nExample: lesson 5",
+            t(user_id, "send_name_as_text"),
             reply_markup=CANCEL_KEYBOARD,
         )
     else:
         await update.message.reply_text(
-            "Please send a video or audio file to begin.",
-            reply_markup=get_main_keyboard(update.effective_user.id),
+            t(user_id, "begin_with_file"),
+            reply_markup=get_main_keyboard(user_id),
         )
-
 
 # =========================
 # Main
@@ -493,7 +719,8 @@ def main():
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("users", users_command))
+    application.add_handler(CommandHandler("stats", stats_command))
+    application.add_handler(CommandHandler("language", language_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
 
     application.add_handler(
