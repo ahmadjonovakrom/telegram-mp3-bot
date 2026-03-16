@@ -32,12 +32,6 @@ AUDIO_EXTENSION = ".mp3"
 AUDIO_BITRATE = "192k"
 FFMPEG_PATH = os.getenv("FFMPEG_PATH", "ffmpeg")
 
-LANGUAGES = {
-    "en": "English",
-    "uz": "Uzbek",
-    "ru": "Russian",
-}
-
 # =========================
 # Logging
 # =========================
@@ -52,6 +46,7 @@ logger = logging.getLogger(__name__)
 # =========================
 TEXTS = {
     "en": {
+        "choose_bot_language": "Choose bot language",
         "welcome": (
             "Welcome to VideoToMP3Bot.\n\n"
             "Send me a video or audio file.\n"
@@ -95,6 +90,7 @@ TEXTS = {
         "stats": "Users: {users}\nTotal conversions: {total}\nConversions today: {today}\nMost active user conversions: {top}",
     },
     "uz": {
+        "choose_bot_language": "Bot tilini tanlang",
         "welcome": (
             "VideoToMP3Bot ga xush kelibsiz.\n\n"
             "Menga video yoki audio fayl yuboring.\n"
@@ -138,6 +134,7 @@ TEXTS = {
         "stats": "Foydalanuvchilar: {users}\nJami konvertatsiyalar: {total}\nBugungi konvertatsiyalar: {today}\nEng faol foydalanuvchi konvertatsiyasi: {top}",
     },
     "ru": {
+        "choose_bot_language": "Выберите язык бота",
         "welcome": (
             "Добро пожаловать в VideoToMP3Bot.\n\n"
             "Отправьте мне видео или аудиофайл.\n"
@@ -211,10 +208,7 @@ CANCEL_KEYBOARD = ReplyKeyboardMarkup(
 
 LANGUAGE_KEYBOARD = ReplyKeyboardMarkup(
     [
-        ["English"],
-        ["Uzbek"],
-        ["Russian"],
-        ["Cancel"],
+        ["English", "Uzbek", "Russian"],
     ],
     resize_keyboard=True,
 )
@@ -234,7 +228,7 @@ def init_db():
             """
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
-                language TEXT NOT NULL DEFAULT 'en'
+                language TEXT NOT NULL DEFAULT ''
             )
             """
         )
@@ -253,10 +247,23 @@ def init_db():
 def register_user(user_id: int):
     with sqlite3.connect(DB_FILE) as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO users (user_id, language) VALUES (?, 'en')",
+            "INSERT OR IGNORE INTO users (user_id, language) VALUES (?, '')",
             (user_id,),
         )
         conn.commit()
+
+
+def has_language(user_id: int) -> bool:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            row = conn.execute(
+                "SELECT language FROM users WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            return bool(row and row[0] in TEXTS)
+    except Exception as exc:
+        logger.warning("Could not check user language for %s: %s", user_id, exc)
+        return False
 
 
 def get_user_language(user_id: int) -> str:
@@ -470,8 +477,17 @@ def extract_media_info(update: Update) -> dict | None:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     register_user(user_id)
+
     context.user_data.pop("pending_media", None)
     context.user_data.pop("awaiting_language", None)
+
+    if not has_language(user_id):
+        context.user_data["awaiting_language"] = True
+        await update.message.reply_text(
+            TEXTS["en"]["choose_bot_language"],
+            reply_markup=LANGUAGE_KEYBOARD,
+        )
+        return
 
     await update.message.reply_text(
         t(user_id, "welcome"),
@@ -602,16 +618,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "russian": "ru",
         }
         language_code = mapping.get(lower_text)
+
         if language_code:
             set_user_language(user_id, language_code)
             context.user_data.pop("awaiting_language", None)
+
             await update.message.reply_text(
                 t(user_id, "language_saved"),
+                reply_markup=ReplyKeyboardRemove(),
+            )
+
+            await update.message.reply_text(
+                t(user_id, "welcome"),
                 reply_markup=get_main_keyboard(user_id),
             )
         else:
             await update.message.reply_text(
-                t(user_id, "choose_language"),
+                TEXTS["en"]["choose_bot_language"],
                 reply_markup=LANGUAGE_KEYBOARD,
             )
         return
