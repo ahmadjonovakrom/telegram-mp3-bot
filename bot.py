@@ -417,6 +417,37 @@ def convert_to_mp3(input_path: Path, output_path: Path, ffmpeg_bin: str):
         raise RuntimeError(result.stderr.strip())
 
 
+def convert_mp3_to_voice(input_mp3: Path, output_ogg: Path, ffmpeg_bin: str):
+    command = [
+        ffmpeg_bin,
+        "-y",
+        "-i",
+        str(input_mp3),
+        "-vn",
+        "-map_metadata",
+        "-1",
+        "-ac",
+        "1",
+        "-c:a",
+        "libopus",
+        "-b:a",
+        "48k",
+        "-ar",
+        "48000",
+        str(output_ogg),
+    ]
+
+    result = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip())
+
+
 async def cleanup_files(*paths: Path):
     for path in paths:
         try:
@@ -679,6 +710,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     input_path = DOWNLOAD_DIR / f"{requested_name}_{update.message.message_id}{input_ext}"
     output_path = OUTPUT_DIR / f"{requested_name}_{update.message.message_id}{AUDIO_EXTENSION}"
+    voice_output_path = OUTPUT_DIR / f"{requested_name}_{update.message.message_id}.ogg"
 
     status = await update.message.reply_text(
         t(user_id, "converting"),
@@ -690,6 +722,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await telegram_file.download_to_drive(custom_path=str(input_path))
 
         loop = asyncio.get_running_loop()
+
         await loop.run_in_executor(
             None,
             convert_to_mp3,
@@ -698,20 +731,34 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ffmpeg_bin,
         )
 
+        await loop.run_in_executor(
+            None,
+            convert_mp3_to_voice,
+            output_path,
+            voice_output_path,
+            ffmpeg_bin,
+        )
+
         with open(output_path, "rb") as audio_file:
-            await update.message.reply_document(
-                document=audio_file,
+            await update.message.reply_audio(
+                audio=audio_file,
                 filename=f"{requested_name}{AUDIO_EXTENSION}",
+                title=requested_name,
+            )
+
+        with open(voice_output_path, "rb") as voice_file:
+            await update.message.reply_voice(
+                voice=voice_file,
             )
 
         log_conversion(user_id)
 
-        # Remove the "Converting..." message
         await status.delete()
         await update.message.reply_text(
             t(user_id, "send_another"),
-        reply_markup=get_main_keyboard(user_id),
-       )
+            reply_markup=get_main_keyboard(user_id),
+        )
+
     except Exception as exc:
         logger.exception("Conversion failed: %s", exc)
         await status.edit_text(t(user_id, "generic_error"))
@@ -722,7 +769,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     finally:
         context.user_data.pop("pending_media", None)
-        await cleanup_files(input_path, output_path)
+        await cleanup_files(input_path, output_path, voice_output_path)
 
 # =========================
 # Fallback
